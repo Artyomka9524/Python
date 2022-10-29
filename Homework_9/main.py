@@ -1,167 +1,145 @@
-#  Крестики-нолики 
-import telebot
-updater = Updater('5665475856:AAEvjpumEOe32VHAwPPRiflcUStUDhn0onE')
+import os
+import random
+import sys
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-from emoji import emojize as em
-from random import randint
-
-x = em(':x:', language='alias')
-o = em(':o:', language='alias')
-
-def check_input(data: str):
-    while not data.isdigit() or not 1 <= int(data) <=9:
-        data = input('Введено неверное значение. Повторите ввод\n')
-    return data
+import strings as st
 
 
-def another_round():
-    if input('Хотите сыграть еще? да / нет\n') == 'да':
-        return True
+# поиск токена для телеграмма
+def getToken():
+    token = ''
+    if os.path.isfile(st.BOT_TOKEN_FILENAME):
+        f = open(st.BOT_TOKEN_FILENAME, "r")
+        token = f.read()
+        f.close()
     else:
-        return False
+        print("Пожалуйста, создайте в папке проекта файл 'token.txt' и поместите туда токен для работы телеграм бота и запустите скрипт заново")
+        sys.exit() 
+    return token
+
+# проверка на выигрыш
+def isWin(arr, who):
+    if (((arr[0] == who) and (arr[4] == who) and (arr[8] == who)) or
+            ((arr[2] == who) and (arr[4] == who) and (arr[6] == who)) or
+            ((arr[0] == who) and (arr[1] == who) and (arr[2] == who)) or
+            ((arr[3] == who) and (arr[4] == who) and (arr[5] == who)) or
+            ((arr[6] == who) and (arr[7] == who) and (arr[8] == who)) or
+            ((arr[0] == who) and (arr[3] == who) and (arr[6] == who)) or
+            ((arr[1] == who) and (arr[4] == who) and (arr[7] == who)) or
+            ((arr[2] == who) and (arr[5] == who) and (arr[8] == who))):
+        return True
+    return False
 
 
-def show_field(arr):
-    print(f' {arr[0]} | {arr[1]} | {arr[2]}')
-    print('='*13)
-    print(f' {arr[3]} | {arr[4]} | {arr[5]}')
-    print('='*13)
-    print(f' {arr[6]} | {arr[7]} | {arr[8]}')
-    print()
+# возвращает количество неопределенных ячеек (т.е. количество ячеек, в которые можно сходить)
+# cellArray - массив данных из callBackData, полученных после нажатия на callBack-кнопку
+def countUndefinedCells(cellArray):
+    counter = 0
+    for i in cellArray:
+        if i == st.SYMBOL_UNDEF:
+            counter += 1
+    return counter
 
+def game(callBackData):
+    # -------------------------------------------------- global message  # использование глобальной переменной message
+    message = st.ANSW_YOUR_TURN  # сообщение, которое вернется
+    alert = None
 
-def check_field(arr):
-    if arr[0] == x and arr[1] == x and arr[2] == x:
-        return True
-    elif arr[3] == x and arr[4] == x and arr[5] == x:
-        return True
-    elif arr[6] == x and arr[7] == x and arr[8] == x:
-        return True
-    elif arr[0] == x and arr[3] == x and arr[6] == x:
-        return True
-    elif arr[1] == x and arr[4] == x and arr[7] == x:
-        return True
-    elif arr[2] == x and arr[5] == x and arr[8] == x:
-        return True
-    elif arr[0] == x and arr[4] == x and arr[8] == x:
-        return True
-    elif arr[2] == x and arr[4] == x and arr[6] == x:
-        return True
-    elif arr[0] == o and arr[1] == o and arr[2] == o:
-        return True
-    elif arr[3] == o and arr[4] == o and arr[5] == o:
-        return True
-    elif arr[6] == o and arr[7] == o and arr[8] == o:
-        return True
-    elif arr[0] == o and arr[3] == o and arr[6] == o:
-        return True
-    elif arr[1] == o and arr[4] == o and arr[7] == o:
-        return True
-    elif arr[2] == o and arr[5] == o and arr[8] == o:
-        return True
-    elif arr[0] == o and arr[4] == o and arr[8] == o:
-        return True
-    elif arr[2] == o and arr[4] == o and arr[6] == o:
-        return True
-    else:
-        return False
+    buttonNumber = int(callBackData[0])  # считывание нажатой кнопки, преобразуя ее из строки в число
+    if not buttonNumber == 9:  # цифра 9 передается в первый раз в качестве заглушки. Т.е. если передана цифра 9, то клавиатура для сообщения создается впервые
+        charList = list(callBackData)  # строчка callBackData разбивается на посимвольный список "123" -> ['1', '2', '3']
+        charList.pop(0)  # удаление из списка первого элемента: который отвечает за выбор кнопки
+        if charList[buttonNumber] == st.SYMBOL_UNDEF:  # проверка: если в нажатой кнопке не выбран крестик/нолик, то можно туда сходить крестику
+            charList[buttonNumber] = st.SYMBOL_X  # эмуляция хода крестика
+            if isWin(charList, st.SYMBOL_X):  # проверка: выиграл ли крестик после своего хода
+                message = st.ANSW_YOU_WIN
+            else:  # если крестик не выиграл, то может сходит бот, т.е. нолик
+                if countUndefinedCells(charList) != 0:  # проверка: есть ли свободные ячейки для хода
+                    # если есть, то ходит бот (нолик)
+                    isCycleContinue = True
+                    # запуск бесконечного цикла т.к. необходимо, чтобы бот походил в свободную клетку, а клетка выбирается случайным образом
+                    while (isCycleContinue):
+                        rand = random.randint(0, 8)  # генерация случайного числа - клетки, в которую сходит бот
+                        if charList[rand] == st.SYMBOL_UNDEF:  # если клетка неопределенна, то ходит бот
+                            charList[rand] = st.SYMBOL_O
+                            isCycleContinue = False  # смена значения переменной для остановки цикла
+                            if isWin(charList, st.SYMBOL_O):  # проверка: выиграл ли бот после своего кода
+                                message = st.ANSW_BOT_WIN
 
-
-game_is_on = True
-while game_is_on:
-    cells = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-    free_cells = 9
-    print('Добро пожаловать в игру "Крестики-нолики"!\n')
-    game_mode = input('Выберите режим игры: 1 - игрок против игрока, 2 - игрок против компьютера\nexit - выход из игры\n').lower()
-
-    if game_mode == '1':
-        print('Выбран режим "Игрок против Игрока".\nИгрок 1 - крестики. Игрок 2 - нолики.\n')
-        coin = randint(1,2)
-        if coin == 1:
-            player1 = True
+        # если клетка, в которую хотел походить пользователь уже занята:
         else:
-            player1 = False
-        finish = False
-        while not free_cells == 0 and not finish:
+            alert = st.ALERT_CANNOT_MOVE_TO_THIS_CELL
 
-            if player1:
-                print('Игрок 1, ваш ход\n')
-                show_field(cells)
-                move = int(check_input(input('Выберите ячейку\n')))
-                while cells[move-1] == x or cells[move-1] == o:
-                    move = int(check_input(input('Эта ячейка уже занята! Выберите другую\n')))
-                cells[move-1] = x
-                player1 = False
-                free_cells -= 1
-                finish = check_field(cells)
-            else:
-                print('Игрок 2 Ваш ход\n')
-                show_field(cells)
-                move = int(check_input(input('Выберите ячейку\n')))
-                while cells[move-1] == x or cells[move-1] == o:
-                    move = int(check_input(input('Эта ячейка уже занята! Выберите другую\n')))
-                cells[move-1] = o
-                player1 = True
-                free_cells -= 1
-                finish = check_field(cells)
+        # проверка: остались ли свободные ячейки для хода и что изначальное сообщение не поменялось (означает, что победителя нет, и что это был не ошибочный ход)
+        if countUndefinedCells(charList) == 0 and message == st.ANSW_YOUR_TURN:
+            message = st.ANSW_DRAW
 
-        show_field(cells)
-        if free_cells == 0:
-            print('Ничья!')
-            game_is_on = another_round()
-        
-        elif player1:
-            print('Выиграл Игрок 2!')
-            game_is_on = another_round()
-        
-        else:
-            print('Выиграл Игрок 1!')
-            game_is_on = another_round()
-    if game_mode == '2':
-        print('Выбран режим "Игрок против Компьютера".\nИгрок - крестики. Компьютер - нолики.\n')
-        coin = randint(1,2)
-        if coin == 1:
-            player = True
-        else:
-            player = False
-        finish = False
-        while not free_cells == 0 and not finish:
+        # формирование новой строчки callBackData на основе сделанного хода
+        callBackData = ''
+        for c in charList:
+            callBackData += c
 
-            if player:
-                print('Игрок 1, ваш ход\n')
-                show_field(cells)
-                move = int(check_input(input('Выберите ячейку\n')))
-                while cells[move-1] == x or cells[move-1] == o:
-                    move = int(check_input(input('Эта ячейка уже занята! Выберите другую\n')))
-                cells[move-1] = x
-                player = False
-                free_cells -= 1
-                finish = check_field(cells)
-            else:
-                move = randint(0, len(cells)-1)
-                while cells[move] == x or cells[move] == o:
-                    move = randint(0, len(cells)-1)
-                cells[move] = o
-                player = True
-                free_cells -= 1
-                print('Компьютер делает ход\n')
-                show_field(cells)
-                finish = check_field(cells)
+    # проверка, что игра закончилась (message равно одному из трех вариантов: победил Х, 0 или ничья):
+    if message == st.ANSW_YOU_WIN or message == st.ANSW_BOT_WIN or message == st.ANSW_DRAW:
+        message += '\n'
+        for i in range(0, 3):
+            message += '\n | '
+            for j in range(0, 3):
+                message += callBackData[j + i * 3] + ' | '
+        callBackData = None  # обнуление callBackData
 
-        show_field(cells)
-        if free_cells == 0:
-            print('Ничья!')
-            game_is_on = another_round()
-        
-        elif player:
-            print('Выиграл Компьютер!')
-            game_is_on = another_round()
-        
-        else:
-            print('Выиграл Игрок!')
-            game_is_on = another_round()
-                
+    return message, callBackData, alert
 
-    if game_mode == 'exit':
-        print('До свидания!')
-        game_is_on = False
+def getKeyboard(callBackData):
+    keyboard = [[], [], []]  # заготовка объекта клавиатуры, которая вернется
+
+    if callBackData != None:  # если
+        # формирование объекта клавиатуры
+        for i in range(0, 3):
+            for j in range(0, 3):
+                keyboard[i].append(InlineKeyboardButton(callBackData[j + i * 3], callback_data=str(j + i * 3) + callBackData))
+
+    return keyboard
+
+
+def newGame(update, _):
+    # сформировать callBack данные для первой игры, то есть строку, состояющую из 9 неопределенных символов
+    data = ''
+    for i in range(0, 9):
+        data += st.SYMBOL_UNDEF
+
+   
+    update.message.reply_text(st.ANSW_YOUR_TURN, reply_markup=InlineKeyboardMarkup(getKeyboard(data)))
+
+
+def button(update, _):
+    query = update.callback_query
+    callbackData = query.data  
+
+    message, callbackData, alert = game(callbackData)  # игра
+    if alert is None:  
+        query.answer()  
+        query.edit_message_text(text=message, reply_markup=InlineKeyboardMarkup(getKeyboard(callbackData)))
+    else:  
+        query.answer(text=alert, show_alert=True)
+
+
+def help_command(update, _):
+    update.message.reply_text(st.ANSW_HELP)
+
+
+if __name__ == '__main__':
+    updater = Updater(getToken()) 
+
+    # добавление обработчиков
+    updater.dispatcher.add_handler(CommandHandler('start', newGame))
+    updater.dispatcher.add_handler(CommandHandler('new_game', newGame))
+    updater.dispatcher.add_handler(CommandHandler('help', help_command))
+    updater.dispatcher.add_handler(MessageHandler(filters.TEXT, help_command))  
+    updater.dispatcher.add_handler(CallbackQueryHandler(button))  
+
+    # Запуск бота
+    updater.start_polling()
+    updater.idle()
