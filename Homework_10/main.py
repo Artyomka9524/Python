@@ -1,8 +1,9 @@
 import telebot 
 from telebot import types
 from logger import *
+from settings import TG_TOKEN
 
-bot = telebot.TeleBot("5620208452:AAFgnS7aCl0xg3izV_fBjnnbECrERL6VUzI")
+bot = telebot.TeleBot(TG_TOKEN)
 
 result = ''
 
